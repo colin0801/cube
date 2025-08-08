@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>俄羅斯方塊 — 單檔網頁版</title>
+  <style>
+    :root{
+      --bg:#0f172a;          /* 背景深藍 */
+      --panel:#111827;       /* 面板深灰 */
+      --grid:#1f2937;        /* 棋盤格線 */
+      --text:#e5e7eb;        /* 文字 */
+      --accent:#38bdf8;      /* 強調色 */
+    }
+    *{box-sizing:border-box;font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"}
+    body{margin:0; background:linear-gradient(180deg,#0b1022,#0f172a); color:var(--text); display:flex; min-height:100vh;}
+    .wrap{margin:auto; display:grid; gap:16px; grid-template-columns: minmax(280px, min(70vw, 520px)) 1fr; align-items:start; padding:16px; width:100%; max-width:1100px}
+    .panel{background:var(--panel); border:1px solid #243042; border-radius:16px; padding:12px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .title{display:flex; gap:10px; align-items:center; font-weight:700; letter-spacing:.5px}
+    .title span{color:var(--accent)}
+    .gridbox{position:relative; width:100%; aspect-ratio:10/20;}
+    canvas{width:100%; height:100%; display:block; background:#0a1020; border-radius:12px;}
+
+    .side{display:grid; gap:12px}
+    .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center}
+    .stat{background:#0b1222; border:1px solid #2a3a50; border-radius:12px; padding:8px}
+    .big{font-size:20px; font-weight:800}
+
+    .boxes{display:grid; grid-template-columns:repeat(2,1fr); gap:8px}
+    .box{background:#0b1222; border:1px solid #2a3a50; border-radius:12px; padding:8px}
+    .box h3{margin:0 0 6px 0; font-size:14px; color:#9fb6d1}
+    .mini{width:100%; aspect-ratio:1/1; background:#0a1020; border-radius:8px}
+    .help{font-size:12px; line-height:1.4}
+    code{background:#0a1020; padding:2px 6px; border-radius:6px; border:1px solid #223049}
+
+    .btns{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+    .btn{padding:10px; border-radius:10px; background:#12223a; border:1px solid #2a3a50; color:var(--text); font-weight:700; cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+
+    /* 行動版觸控控制器 */
+    .touch{display:none; gap:8px; grid-template-columns:repeat(4,1fr)}
+    .tbtn{user-select:none; touch-action:manipulation; padding:14px 8px; border-radius:12px; text-align:center; background:#0f1e34; border:1px solid #2a3a50; font-weight:800}
+    .tbtn:active{transform:translateY(1px)}
+
+    @media (max-width: 900px){
+      .wrap{grid-template-columns:1fr}
+      .touch{display:grid}
+      .btns{grid-template-columns:repeat(2,1fr)}
+      .boxes{grid-template-columns:repeat(2, 1fr)}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="title">🎮 <span>Web Tetris</span> — 俄羅斯方塊</div>
+      <div class="gridbox"><canvas id="board" width="300" height="600"></canvas></div>
+      <div class="touch" aria-label="觸控控制器">
+        <div class="tbtn" id="tLeft">← 左</div>
+        <div class="tbtn" id="tDown">↓ 軟降</div>
+        <div class="tbtn" id="tRight">→ 右</div>
+        <div class="tbtn" id="tRotate">↻ 旋轉</div>
+        <div class="tbtn" id="tHold">H 保留</div>
+        <div class="tbtn" id="tDrop">Space 硬降</div>
+        <div class="tbtn" id="tPause">P 暫停</div>
+        <div class="tbtn" id="tReset">R 重開</div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel stats">
+        <div class="stat"><div>分數</div><div id="score" class="big">0</div></div>
+        <div class="stat"><div>等級</div><div id="level" class="big">1</div></div>
+        <div class="stat"><div>消行</div><div id="lines" class="big">0</div></div>
+      </div>
+
+      <div class="panel boxes">
+        <div class="box">
+          <h3>下一顆</h3>
+          <canvas id="next" class="mini" width="120" height="120"></canvas>
+        </div>
+        <div class="box">
+          <h3>保留 (Hold)</h3>
+          <canvas id="hold" class="mini" width="120" height="120"></canvas>
+        </div>
+        <div class="box" style="grid-column:1/3">
+          <h3>鍵位說明</h3>
+          <div class="help">
+            <div><b>← →</b>: 左/右移動　<b>↓</b>: 軟降(+1/格)</div>
+            <div><b>↑ / X</b>: 旋轉　<b>Z</b>: 逆時針　<b>Space</b>: 硬降(+2/格)</div>
+            <div><b>Shift/C</b>: 保留　<b>P</b>: 暫停　<b>R</b>: 重新開始</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="title">⚙️ 遊戲設定</div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn" id="btnPause">暫停/繼續 (P)</button>
+          <button class="btn" id="btnReset">重新開始 (R)</button>
+          <button class="btn" id="btnGhost">切換幽靈影 (G)</button>
+          <button class="btn" id="btnGrid">切換格線 (B)</button>
+          <button class="btn" id="btnSound">切換音效 (S)</button>
+          <button class="btn" id="btnDas">移動加速 (DAS)</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="title">📌 開發者說明</div>
+        <div class="help">
+          <ul>
+            <li>10×20 棋盤、7-Bag 隨機、簡化 SRS 旋轉、T-Spin 未實作 (可擴充)。</li>
+            <li>計分：單/雙/三/四消=100/300/500/800；軟降+1/格、硬降+2/格。</li>
+            <li>每 10 行升級一次，等級提升下落間隔會縮短。</li>
+            <li>行動裝置提供觸控按鈕，PC 用鍵盤操作。</li>
+            <li>程式為單檔：可直接另存成 <code>tetris.html</code> 離線玩。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  /* =====================================================
+   *  俄羅斯方塊 — 單檔網頁版
+   *  Ver: 1.0.0 (2025-08-08)
+   *  作者: ChatGPT
+   *  說明: 純 HTML/JS/CSS，無第三方依賴。
+   *  功能: 7-Bag、Hold、Next、Ghost、DAS、行動觸控。
+   * ===================================================== */
+  const COLS=10, ROWS=20, BLOCK=30;  // 畫布內部像素尺寸(邏輯)
+  const board = document.getElementById('board');
+  const ctx = board.getContext('2d');
+  const nextCanvas = document.getElementById('next');
+  const nextCtx = nextCanvas.getContext('2d');
+  const holdCanvas = document.getElementById('hold');
+  const holdCtx = holdCanvas.getContext('2d');
+
+  // 狀態
+  let grid = createMatrix(COLS, ROWS, 0); // 0=空，其他為顏色索引
+  let bag = [];                // 7-Bag 隨機袋
+  let queue = [];              // 下一顆
+  let current = null;          // 目前下落中的方塊 {x,y,shape,rot,color}
+  let hold = null;             // 保留方塊型別 (0..6)
+  let holdLocked = false;      // 當前回合已使用過 hold？
+  let dropTimer = 0;           // 自動下落的計時器
+  let dropInterval = 1000;     // 目前下落間隔 (ms)
+  let lastTime = 0;            // rAF 時戳
+  let running = true;          // 是否暫停
+  let ghostOn = true;          // 幽靈影顯示
+  let gridOn = true;           // 棋盤格線
+  let soundOn = false;         // 簡易音效
+  let score=0, lines=0, level=1;
+
+  // DAS/ARR 簡化處理
+  const moveState = {left:false,right:false,down:false};
+  let dasDelay = 140, arr = 25; // 初次延遲/連續重複
+  let dasTimers = {left:0,right:0};
+
+  // 7 個方塊形狀 (4x4)
+  // I, J, L, O, S, T, Z 以索引 0..6 表示
+  const SHAPES = [
+    // I
+    [ [0,0,0,0], [1,1,1,1], [0,0,0,0], [0,0,0,0] ],
+    // J
+    [ [1,0,0], [1,1,1], [0,0,0] ],
+    // L
+    [ [0,0,1], [1,1,1], [0,0,0] ],
+    // O
+    [ [1,1], [1,1] ],
+    // S
+    [ [0,1,1], [1,1,0], [0,0,0] ],
+    // T
+    [ [0,1,0], [1,1,1], [0,0,0] ],
+    // Z
+    [ [1,1,0], [0,1,1], [0,0,0] ]
+  ];
+
+  // 配色 (與 Game Boy 現代風)
+  const COLORS = [
+    '#00f0f0', // I
+    '#0000f0', // J
+    '#f0a000', // L
+    '#f0f000', // O
+    '#00f000', // S
+    '#a000f0', // T
+    '#f00000', // Z
+    '#334155'  // 固定方塊陰影
+  ];
+
+  // ====== 初始化 ======
+  resetAll();
+  updateInfo();
+  requestAnimationFrame(loop);
+
+  // ====== 主循環 ======
+  function loop(time=0){
+    const delta = time - lastTime; lastTime = time;
+    if(running){
+      dropTimer += delta;
+      // DAS/ARR 處理
+      handleAutoRepeat(delta);
+      if(dropTimer >= dropInterval){
+        stepDown();
+        dropTimer = 0;
+      }
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ====== 棋盤與繪圖 ======
+  function createMatrix(w,h,val=0){return Array.from({length:h},()=>Array(w).fill(val));}
+
+  function draw(){
+    // 背景
+    ctx.clearRect(0,0,board.width,board.height);
+    ctx.fillStyle = '#0a1020';
+    ctx.fillRect(0,0,board.width,board.height);
+
+    // 已固定方塊
+    for(let y=0;y<ROWS;y++){
+      for(let x=0;x<COLS;x++){
+        const v = grid[y][x];
+        if(v){ drawBlock(x,y,COLORS[v-1]); }
+      }
+    }
+
+    // 幽靈影
+    if(current && ghostOn){
+      const gY = ghostY();
+      forEachBlock(current,(x,y)=>{
+        drawBlock(x,y+gY,'#1f2937');
+      });
+    }
+
+    // 目前下落
+    if(current){
+      forEachBlock(current,(x,y)=>drawBlock(x,y,current.color));
+    }
+
+    // 棋盤格線
+    if(gridOn){
+      ctx.strokeStyle = '#162033';
+      ctx.lineWidth = 1;
+      for(let x=1;x<COLS;x++){line(x*BLOCK,0,x*BLOCK,ROWS*BLOCK)}
+      for(let y=1;y<ROWS;y++){line(0,y*BLOCK,COLS*BLOCK,y*BLOCK)}
+    }
+
+    // Game Over 遮罩
+    if(!running && isGameOver){
+      overlayText('GAME OVER\n按 R 重新開始');
+    }else if(!running){
+      overlayText('暫停中\n按 P 繼續');
+    }
+  }
+
+  function drawBlock(x,y,color){
+    ctx.fillStyle = color;
+    ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
+    // 立體效果
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK,6);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(x*BLOCK,(y+1)*BLOCK-6,BLOCK,6);
+  }
+  function line(x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+  function overlayText(t){
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0,0,board.width,board.height);
+    ctx.fillStyle = '#e5e7eb';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.font='bold 28px system-ui';
+    t.split('\n').forEach((ln,i)=>ctx.fillText(ln,board.width/2,board.height/2 + i*32));
+  }
+
+  // ====== 下落、碰撞、合併 ======
+  function stepDown(){
+    if(!current) spawn();
+    current.y++;
+    if(collide()){
+      current.y--;
+      merge();
+      clearLines();
+      dropTimer = 0; holdLocked = false;
+      spawn();
+      if(collide()){
+        // 立刻碰撞表示 Game Over
+        running=false; isGameOver=true; playTone(100,0.2);
+      }
+    }
+  }
+
+  function collide(){
+    let collided=false;
+    forEachBlock(current,(x,y)=>{
+      if(y>=ROWS || x<0 || x>=COLS || (y>=0 && grid[y][x])) collided=true;
+    });
+    return collided;
+  }
+
+  function merge(){
+    forEachBlock(current,(x,y)=>{ if(y>=0) grid[y][x]=colorIndex(current.color)+1; });
+  }
+
+  function colorIndex(hex){return COLORS.findIndex(c=>c===hex);}    
+
+  function clearLines(){
+    let cleared=0;
+    outer: for(let y=ROWS-1;y>=0;y--){
+      for(let x=0;x<COLS;x++) if(!grid[y][x]) continue outer;
+      // 滿行，刪除
+      grid.splice(y,1); grid.unshift(Array(COLS).fill(0));
+      cleared++; y++;
+    }
+    if(cleared>0){
+      const pts = [0,100,300,500,800][cleared];
+      score += pts; lines += cleared; level = 1 + Math.floor(lines/10);
+      dropInterval = Math.max(80, 1000 - (level-1)*70);
+      updateInfo();
+      playTone(660,0.05); // 簡易音效
+    }
+  }
+
+  function forEachBlock(p,fn){
+    const m = rotateMatrix(p.shape,p.rot);
+    for(let y=0;y<m.length;y++){
+      for(let x=0;x<m[y].length;x++){
+        if(m[y][x]) fn(p.x + x, p.y + y);
+      }
+    }
+  }
+
+  // ====== 生成、旋轉、位移 ======
+  function spawn(){
+    const type = nextType();
+    const shape = SHAPES[type];
+    const color = COLORS[type];
+    const size = shape[0].length;
+    current = {x: Math.floor((COLS - size)/2), y:-2, shape, rot:0, color, type};
+  }
+
+  function nextType(){
+    // 保障佇列至少 5 顆
+    while(queue.length<5){
+      if(bag.length===0) bag = shuffle([0,1,2,3,4,5,6]);
+      queue.push(bag.pop());
+    }
+    const t = queue.shift();
+    drawNext();
+    return t;
+  }
+
+  function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()* (i+1))|0; [a[i],a[j]]=[a[j],a[i]];} return a;}
+
+  function rotate(dir){
+    if(!current) return;
+    const oldRot = current.rot;
+    current.rot = (current.rot + dir + 4) % 4;
+    // 簡化踢牆 (Wall Kick)：嘗試左右與上移
+    const kicks = [ {x:0,y:0},{x:1,y:0},{x:-1,y:0},{x:0,y:-1},{x:2,y:0},{x:-2,y:0} ];
+    const ox = current.x, oy = current.y;
+    for(const k of kicks){
+      current.x = ox + k.x; current.y = oy + k.y;
+      if(!collide()) { playTone(520,0.02); return; }
+    }
+    // 無法旋轉，還原
+    current.x=ox; current.y=oy; current.rot=oldRot;
+  }
+
+  function move(dx){
+    if(!current) return;
+    current.x += dx;
+    if(collide()) current.x -= dx; else playTick();
+  }
+
+  function softDrop(){
+    if(!current) return;
+    current.y++;
+    if(collide()) current.y--;
+    else { score+=1; updateInfo(); }
+  }
+
+  function hardDrop(){
+    if(!current) return;
+    let dist=0;
+    while(true){ current.y++; if(collide()){ current.y--; break;} dist++; }
+    score += dist*2; updateInfo();
+    merge(); clearLines(); holdLocked=false; spawn(); dropTimer=0; playTone(300,0.03);
+    if(collide()){ running=false; isGameOver=true; }
+  }
+
+  function ghostY(){
+    if(!current) return 0;
+    let d=0; forEachBlock(current,(x,y)=>{});
+    const temp = {...current};
+    while(true){ temp.y++; if(checkCollide(temp)){ temp.y--; break;} }
+    return temp.y - current.y;
+  }
+  function checkCollide(p){
+    let hit=false; forEachBlock(p,(x,y)=>{ if(y>=ROWS || x<0 || x>=COLS || (y>=0 && grid[y][x])) hit=true; }); return hit;
+  }
+
+  function holdPiece(){
+    if(holdLocked) return; // 本回合只能一次
+    if(hold===null){ hold = current.type; spawn(); }
+    else { const t = hold; hold = current.type; // 交換
+           const shape = SHAPES[t]; const color = COLORS[t];
+           const size = shape[0].length; current = {x:Math.floor((COLS-size)/2), y:-2, shape, rot:0, color, type:t}; }
+    holdLocked = true; drawHold(); playTone(420,0.02);
+  }
+
+  function rotateMatrix(mat,rot){
+    let m=mat; const n=m.length;
+    if(rot===0) return m;
+    // 補齊到正方 (對於 2x3 等)
+    const size = Math.max(m.length, m[0].length);
+    const sq = Array.from({length:size}, (_,y)=>Array(size).fill(0));
+    for(let y=0;y<m.length;y++) for(let x=0;x<m[0].length;x++) sq[y][x]=m[y][x];
+    m = sq;
+    for(let r=0;r<rot;r++){
+      const t = Array.from({length:size},()=>Array(size).fill(0));
+      for(let y=0;y<size;y++) for(let x=0;x<size;x++) t[x][size-1-y]=m[y][x];
+      m=t;
+    }
+    // 去除多餘零邊
+    return trimMatrix(m);
+  }
+  function trimMatrix(m){
+    // 去除全 0 的行列，讓方塊緊密
+    let top=0,bottom=m.length-1,left=0,right=m[0].length-1;
+    const isRowZero = r=>m[r].every(v=>v===0);
+    const isColZero = c=>m.every(row=>row[c]===0);
+    while(top<=bottom && isRowZero(top)) top++;
+    while(bottom>=top && isRowZero(bottom)) bottom--;
+    while(left<=right && isColZero(left)) left++;
+    while(right>=left && isColZero(right)) right--;
+    const res=[]; for(let y=top;y<=bottom;y++){ res.push(m[y].slice(left,right+1)); }
+    return res.length?res:[[1]];
+  }
+
+  // ====== Next/Hold 顯示 ======
+  function drawNext(){
+    nextCtx.clearRect(0,0,nextCanvas.width,nextCanvas.height);
+    const type = queue[0]; const shape = SHAPES[type]; const color=COLORS[type];
+    drawMini(nextCtx, nextCanvas, shape, color);
+  }
+  function drawHold(){
+    holdCtx.clearRect(0,0,holdCanvas.width,holdCanvas.height);
+    if(hold===null) return;
+    const shape = SHAPES[hold]; const color=COLORS[hold];
+    drawMini(holdCtx, holdCanvas, shape, color);
+  }
+  function drawMini(c, canvas, shape, color){
+    const m = trimMatrix(shape);
+    const size = Math.max(m.length, m[0].length);
+    const cell = Math.floor((canvas.width-10)/size);
+    const offX = Math.floor((canvas.width - cell*size)/2);
+    const offY = Math.floor((canvas.height - cell*size)/2);
+    c.fillStyle = '#0a1020'; c.fillRect(0,0,canvas.width,canvas.height);
+    for(let y=0;y<m.length;y++) for(let x=0;x<m[0].length;x++) if(m[y][x]){
+      c.fillStyle=color; c.fillRect(offX+x*cell, offY+y*cell, cell, cell);
+      c.fillStyle='rgba(255,255,255,0.1)'; c.fillRect(offX+x*cell, offY+y*cell, cell, 4);
+      c.fillStyle='rgba(0,0,0,0.25)'; c.fillRect(offX+x*cell, offY+(y+1)*cell-4, cell, 4);
+    }
+  }
+
+  // ====== 介面/資訊 ======
+  function resetAll(){
+    grid = createMatrix(COLS,ROWS,0);
+    bag=[]; queue=[]; current=null; hold=null; holdLocked=false; isGameOver=false;
+    score=0; lines=0; level=1; dropInterval=1000; dropTimer=0; running=true;
+    // 預先塞入兩顆，立刻生成一顆
+    nextType(); spawn(); drawHold(); updateInfo();
+  }
+  function updateInfo(){
+    document.getElementById('score').textContent = score;
+    document.getElementById('lines').textContent = lines;
+    document.getElementById('level').textContent = level;
+  }
+
+  // ====== 鍵盤與觸控 ======
+  document.addEventListener('keydown', e=>{
+    if(e.repeat) return; // 讓 DAS/ARR 控制
+    switch(e.key){
+      case 'ArrowLeft': move(-1); moveState.left=true; dasTimers.left=0; break;
+      case 'ArrowRight': move(1); moveState.right=true; dasTimers.right=0; break;
+      case 'ArrowDown': moveState.down=true; softDrop(); break;
+      case 'ArrowUp': rotate(1); break;
+      case 'x': case 'X': rotate(1); break;
+      case 'z': case 'Z': rotate(-1); break;
+      case ' ': e.preventDefault(); hardDrop(); break;
+      case 'Shift': case 'c': case 'C': holdPiece(); break;
+      case 'p': case 'P': togglePause(); break;
+      case 'r': case 'R': resetAll(); break;
+      case 'g': case 'G': ghostOn=!ghostOn; break;
+      case 'b': case 'B': gridOn=!gridOn; break;
+      case 's': case 'S': soundOn=!soundOn; break;
+      default: break;
+    }
+  });
+  document.addEventListener('keyup', e=>{
+    switch(e.key){
+      case 'ArrowLeft': moveState.left=false; break;
+      case 'ArrowRight': moveState.right=false; break;
+      case 'ArrowDown': moveState.down=false; break;
+    }
+  });
+
+  // 觸控按鈕
+  const id = s=>document.getElementById(s);
+  id('tLeft').onclick = ()=>move(-1);
+  id('tRight').onclick= ()=>move(1);
+  id('tDown').onclick = ()=>softDrop();
+  id('tRotate').onclick=()=>rotate(1);
+  id('tDrop').onclick = ()=>hardDrop();
+  id('tHold').onclick = ()=>holdPiece();
+  id('tPause').onclick= ()=>togglePause();
+  id('tReset').onclick= ()=>resetAll();
+
+  // 設定面板按鈕
+  id('btnPause').onclick=()=>togglePause();
+  id('btnReset').onclick=()=>resetAll();
+  id('btnGhost').onclick=()=>ghostOn=!ghostOn;
+  id('btnGrid').onclick =()=>gridOn=!gridOn;
+  id('btnSound').onclick=()=>soundOn=!soundOn;
+  id('btnDas').onclick=()=>{ dasDelay = (dasDelay===140?90:140); arr=(arr===25?18:25); };
+
+  function togglePause(){ running=!running; if(!running) playTone(120,0.05); }
+
+  function handleAutoRepeat(delta){
+    // 左右
+    for(const dir of ['left','right']){
+      if(moveState[dir]){
+        dasTimers[dir] += delta;
+        if(dasTimers[dir] >= dasDelay){
+          // ARR 觸發
+          dasTimers[dir] -= arr; move(dir==='left'?-1:1);
+        }
+      }else dasTimers[dir]=0;
+    }
+    if(moveState.down) softDrop();
+  }
+
+  // ====== 簡易音效 (WebAudio) ======
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx=null;
+  function playTick(){ if(!soundOn) return; playTone(220,0.01); }
+  function playTone(freq=440, dur=0.05){
+    if(!soundOn) return;
+    if(!audioCtx) audioCtx = new AudioCtx();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value=freq; o.type='square';
+    o.connect(g); g.connect(audioCtx.destination);
+    const now=audioCtx.currentTime; g.gain.setValueAtTime(0.08, now); g.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+    o.start(); o.stop(now+dur);
+  }
+
+  // ====== 視窗縮放處理 (保持等比例) ======
+  function resize(){
+    // 固定邏輯解析度：10*20 方塊，每塊 30px
+    board.width = COLS*BLOCK; board.height = ROWS*BLOCK;
+  }
+  addEventListener('resize', resize); resize();
+
+  // 遊戲結束旗標
+  let isGameOver=false;
+
+  </script>
+</body>
+</html>
