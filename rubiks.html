@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>魔術方塊 3D 模擬器</title>
+  <style>
+    :root{
+      --bg:#050812;
+      --panel:#0b1220;
+      --accent:#38bdf8;
+      --text:#e2e8f0;
+    }
+    *{box-sizing:border-box;font-family:"Noto Sans TC", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;}
+    body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(circle at top,#0f1b3a,var(--bg));color:var(--text);} 
+    header{padding:24px 16px 16px;text-align:center;}
+    header h1{margin:0;font-size:28px;letter-spacing:1px;}
+    main{flex:1;display:grid;gap:16px;grid-template-columns:minmax(280px,1fr) 320px;padding:0 16px 24px;}
+    #stage{background:#030711;border:1px solid #1f2a44;border-radius:18px;display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 18px 45px rgba(0,0,0,0.45);}
+    #canvas-container{width:100%;padding-top:100%;position:relative;}
+    canvas{position:absolute;inset:0;width:100%!important;height:100%!important;border-radius:16px;}
+    aside{background:var(--panel);border:1px solid #1b253b;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:16px;box-shadow:0 16px 40px rgba(0,0,0,0.35);}
+    .section h2{margin:0 0 8px;font-size:18px;color:var(--accent);} 
+    .controls{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+    button{background:#13203b;border:1px solid #243559;color:var(--text);padding:10px 12px;border-radius:12px;font-weight:600;cursor:pointer;transition:transform 0.1s,background 0.2s;border-bottom-width:3px;}
+    button:hover{background:#1c2f4f;}
+    button:active{transform:translateY(2px);}
+    .face-btn{font-size:16px;}
+    .wide{grid-column:span 3;}
+    .moves{font-family:"JetBrains Mono", "Roboto Mono", monospace;font-size:13px;background:#040914;border-radius:10px;padding:10px;border:1px solid #1c2742;min-height:70px;white-space:pre-wrap;word-break:break-word;}
+    .tip{font-size:13px;line-height:1.55;color:#94a3b8;}
+    @media (max-width:900px){
+      main{grid-template-columns:1fr;}
+      aside{order:-1;}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>魔術方塊 3D 模擬器</h1>
+    <p style="margin:6px 0 0;color:#94a3b8">拖曳旋轉視角，點擊控制鍵即可進行方塊轉動。支援隨機打亂與還原。</p>
+  </header>
+  <main>
+    <section id="stage" aria-label="3D 魔術方塊">
+      <div id="canvas-container"></div>
+      <div id="overlay" style="position:absolute;top:16px;right:16px;background:rgba(3,7,17,0.6);padding:6px 10px;border-radius:10px;font-size:12px;">
+        拖曳視角 · 滾輪縮放
+      </div>
+    </section>
+    <aside>
+      <div class="section">
+        <h2>面轉控制</h2>
+        <div class="controls" id="faceControls"></div>
+      </div>
+      <div class="section">
+        <h2>功能</h2>
+        <div class="controls">
+          <button class="wide" id="btnScramble">🎲 隨機打亂</button>
+          <button class="wide" id="btnReset">♻️ 回到還原</button>
+          <button class="wide" id="btnUndo">↩️ 復原一步</button>
+        </div>
+      </div>
+      <div class="section">
+        <h2>步驟紀錄</h2>
+        <div class="moves" id="moveLog">尚未開始操作</div>
+      </div>
+      <div class="tip">
+        <strong>提示：</strong>視角旋轉不會改變棋盤朝向；面轉方向採 <em>以該面為正面</em> 向外觀看的順時針。鍵盤支援：U, D, L, R, F, B（Shift=逆時針，Alt=180°，Ctrl+Z 復原，Space 打亂）。
+      </div>
+    </aside>
+  </main>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+    const container = document.getElementById('canvas-container');
+    const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(600,600);
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(5.2, 5.2, 5.2);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dirLight.position.set(5, 8, 4);
+    scene.add(dirLight);
+
+    const cubeGroup = new THREE.Group();
+    scene.add(cubeGroup);
+
+    const FACE_COLORS = {
+      U: 0xfefefe,
+      D: 0xf5d300,
+      F: 0x00a85a,
+      B: 0x0055d4,
+      R: 0xff3b30,
+      L: 0xff8c00
+    };
+
+    const AXIS_VECTORS = {
+      x: new THREE.Vector3(1,0,0),
+      y: new THREE.Vector3(0,1,0),
+      z: new THREE.Vector3(0,0,1)
+    };
+
+    const faceConfig = {
+      U: {axis:'y', value:1, cw:-1},
+      D: {axis:'y', value:-1, cw:1},
+      F: {axis:'z', value:1, cw:-1},
+      B: {axis:'z', value:-1, cw:1},
+      R: {axis:'x', value:1, cw:-1},
+      L: {axis:'x', value:-1, cw:1}
+    };
+
+    const cubies = [];
+    const SIZE = 0.96;
+    const GAP = 1.02;
+
+    function makeCubie(x, y, z){
+      const materials = [];
+      const faces = [FACE_COLORS.R, FACE_COLORS.L, FACE_COLORS.U, FACE_COLORS.D, FACE_COLORS.F, FACE_COLORS.B];
+      for(const color of faces){
+        materials.push(new THREE.MeshLambertMaterial({color, emissive:0x0, emissiveIntensity:0.1}));
+      }
+      const geom = new THREE.BoxGeometry(SIZE, SIZE, SIZE);
+      const mesh = new THREE.Mesh(geom, materials);
+      mesh.position.set(x * GAP, y * GAP, z * GAP);
+      mesh.userData.coord = {x, y, z};
+      cubeGroup.add(mesh);
+      cubies.push(mesh);
+    }
+
+    function buildCube(){
+      cubeGroup.clear();
+      cubies.length = 0;
+      for(let x=-1;x<=1;x++) for(let y=-1;y<=1;y++) for(let z=-1;z<=1;z++){
+        if(x===0 && y===0 && z===0) continue;
+        makeCubie(x, y, z);
+      }
+    }
+
+    buildCube();
+
+    let isDragging=false, lastX=0, lastY=0;
+    const dragSpeed=0.005;
+
+    renderer.domElement.addEventListener('pointerdown', e=>{
+      isDragging=true; lastX=e.clientX; lastY=e.clientY; renderer.domElement.setPointerCapture(e.pointerId);
+    });
+    renderer.domElement.addEventListener('pointermove', e=>{
+      if(!isDragging) return;
+      const dx=e.clientX-lastX; const dy=e.clientY-lastY;
+      cubeGroup.rotation.y += dx*dragSpeed;
+      cubeGroup.rotation.x += dy*dragSpeed;
+      cubeGroup.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, cubeGroup.rotation.x));
+      lastX=e.clientX; lastY=e.clientY;
+    });
+    renderer.domElement.addEventListener('pointerup', e=>{
+      isDragging=false; renderer.domElement.releasePointerCapture(e.pointerId);
+    });
+    renderer.domElement.addEventListener('pointerleave', ()=>{ isDragging=false; });
+    renderer.domElement.addEventListener('wheel', e=>{
+      e.preventDefault();
+      const delta = Math.sign(e.deltaY);
+      camera.position.multiplyScalar(1 + delta*0.08);
+      camera.position.clampLength(3.5, 10);
+    }, {passive:false});
+
+    const moveQueue = [];
+    let activeRotation = null;
+    const moveHistory = [];
+    const moveLog = document.getElementById('moveLog');
+
+    function queueMove(face, dir=1, log=true){
+      moveQueue.push({face, dir, log});
+      processQueue();
+    }
+
+    function processQueue(){
+      if(activeRotation || moveQueue.length===0) return;
+      const move = moveQueue.shift();
+      startRotation(move.face, move.dir, move.log);
+    }
+
+    function startRotation(face, dir, log){
+      const cfg = faceConfig[face];
+      if(!cfg) { processQueue(); return; }
+      const group = new THREE.Group();
+      cubeGroup.add(group);
+      const selected = cubies.filter(c=>Math.abs(c.userData.coord[cfg.axis]-cfg.value)<0.01);
+      selected.forEach(c=>group.attach(c));
+      const sign = cfg.cw * dir;
+      const target = sign * Math.PI/2;
+      activeRotation = {group, selected, axis:cfg.axis, sign, angle:0, target, logFace:face, logDir:dir, log};
+    }
+
+    function finalizeRotation(){
+      const rot = activeRotation;
+      const axis = rot.axis;
+      const sign = rot.sign;
+      const vector = AXIS_VECTORS[axis];
+      const remainder = rot.target - rot.angle;
+      if(Math.abs(remainder) > 1e-4){
+        rot.group.rotateOnAxis(vector, remainder);
+      }
+      rot.selected.forEach(mesh=>{
+        cubeGroup.attach(mesh);
+        mesh.userData.coord = rotateCoord(mesh.userData.coord, axis, sign);
+        mesh.position.set(mesh.userData.coord.x * GAP, mesh.userData.coord.y * GAP, mesh.userData.coord.z * GAP);
+      });
+      cubeGroup.remove(rot.group);
+      if(rot.log){
+        const notation = formatNotation(rot.logFace, rot.logDir);
+        moveHistory.push(notation);
+        updateLog();
+      }
+      activeRotation=null;
+      processQueue();
+    }
+
+    function rotateCoord(coord, axis, sign){
+      const steps = ((sign % 4) + 4) % 4;
+      const {x,y,z} = coord;
+      const rotatePair = (a,b)=>{
+        switch(steps){
+          case 0: return [a,b];
+          case 1: return [-b, a];
+          case 2: return [-a, -b];
+          case 3: return [b, -a];
+          default: return [a,b];
+        }
+      };
+      switch(axis){
+        case 'x': {
+          const [ny, nz] = rotatePair(y, z);
+          return {x, y: ny, z: nz};
+        }
+        case 'y': {
+          const [nx, nz] = rotatePair(x, z);
+          return {x: nx, y, z: nz};
+        }
+        case 'z': {
+          const [nx, ny] = rotatePair(x, y);
+          return {x: nx, y: ny, z};
+        }
+      }
+      return coord;
+    }
+
+    function formatNotation(face, dir){
+      if(dir===1) return face;
+      if(dir===-1) return face+"'";
+      if(dir===2 || dir===-2) return face+"2";
+      return face;
+    }
+
+    function undo(){
+      if(activeRotation || moveQueue.length>0 || moveHistory.length===0) return;
+      const last = moveHistory.pop();
+      updateLog();
+      const face = last[0];
+      const suffix = last.slice(1);
+      const dir = suffix==='2' ? 2 : suffix==="'" ? -1 : 1;
+      const undoDir = dir===2 ? 2 : -dir;
+      queueMove(face, undoDir, false);
+    }
+
+    function updateLog(){
+      if(moveHistory.length===0){
+        moveLog.textContent='尚未開始操作';
+      } else {
+        const groups=[];
+        for(let i=0;i<moveHistory.length;i+=10){
+          groups.push(moveHistory.slice(i, i+10).join(' '));
+        }
+        moveLog.textContent = groups.join('\n');
+      }
+    }
+
+    const controls = document.getElementById('faceControls');
+    const faces = ['U','D','L','R','F','B'];
+    faces.forEach(face=>{
+      const btn = document.createElement('button');
+      btn.textContent = face;
+      btn.className='face-btn';
+      btn.addEventListener('click', ()=>queueMove(face, 1));
+      controls.appendChild(btn);
+
+      const btnPrime = document.createElement('button');
+      btnPrime.textContent = face+"'";
+      btnPrime.className='face-btn';
+      btnPrime.addEventListener('click', ()=>queueMove(face, -1));
+      controls.appendChild(btnPrime);
+
+      const btn2 = document.createElement('button');
+      btn2.textContent = face+'2';
+      btn2.className='face-btn';
+      btn2.addEventListener('click', ()=>queueMove(face, 2));
+      controls.appendChild(btn2);
+    });
+
+    document.getElementById('btnScramble').addEventListener('click', ()=>{
+      if(activeRotation) return;
+      moveQueue.length = 0;
+      const scrambleMoves = 25;
+      const seq = [];
+      let lastFace = null;
+      for(let i=0;i<scrambleMoves;i++){
+        let face;
+        do {
+          face = faces[Math.floor(Math.random()*faces.length)];
+        } while(face===lastFace);
+        lastFace = face;
+        const dirOptions = [1, -1, 2];
+        const dir = dirOptions[Math.floor(Math.random()*dirOptions.length)];
+        seq.push({face, dir});
+      }
+      seq.forEach(move=>queueMove(move.face, move.dir));
+    });
+
+    document.getElementById('btnReset').addEventListener('click', ()=>{
+      if(activeRotation) return;
+      moveQueue.length = 0;
+      moveHistory.length = 0;
+      updateLog();
+      buildCube();
+    });
+
+    document.getElementById('btnUndo').addEventListener('click', undo);
+
+    window.addEventListener('keydown', e=>{
+      if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+      const key = e.key.toUpperCase();
+      if(faces.includes(key)){
+        let dir = 1;
+        if(e.shiftKey) dir = -1;
+        if(e.altKey || e.metaKey) dir = 2;
+        queueMove(key, dir);
+      } else if(key==='Z' && e.ctrlKey){
+        undo();
+      } else if(key===' '){
+        e.preventDefault();
+        document.getElementById('btnScramble').click();
+      }
+    });
+
+    function animate(){
+      requestAnimationFrame(animate);
+      if(activeRotation){
+        const step = 0.12 * Math.sign(activeRotation.target - activeRotation.angle);
+        const remaining = activeRotation.target - activeRotation.angle;
+        const move = Math.abs(remaining) < Math.abs(step) ? remaining : step;
+        activeRotation.angle += move;
+        activeRotation.group.rotateOnAxis(AXIS_VECTORS[activeRotation.axis], move);
+        if(Math.abs(activeRotation.angle - activeRotation.target) < 1e-3){
+          finalizeRotation();
+        }
+      }
+      camera.lookAt(0,0,0);
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    function handleResize(){
+      const rect = container.getBoundingClientRect();
+      const size = rect.width;
+      renderer.setSize(size, size);
+      camera.aspect = 1;
+      camera.updateProjectionMatrix();
+    }
+
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(container);
+    handleResize();
+  </script>
+</body>
+</html>
