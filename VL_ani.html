@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>OHT 電梯跨樓層搬運動畫（最終版）</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      padding: 16px;
+    }
+
+    h2 {
+      margin-bottom: 8px;
+    }
+
+    svg {
+      background: #ffffff;
+      border: 1px solid #ccc;
+      width: 900px;
+      height: 420px;
+      display: block;
+    }
+
+    .btn-group button {
+      margin-right: 4px;
+      padding: 4px 8px;
+    }
+
+    .tip {
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+    .tip.is-active {
+      opacity: 1;
+    }
+
+    /* ========= 電梯轎廂位置 ========= */
+    #elevatorCabin {
+      transition: transform 0.8s linear;
+      transform-origin: 0 0;
+    }
+    .cab-l1 { transform: translate(400px, 260px); } /* 1F */
+    .cab-l2 { transform: translate(400px, 140px); } /* 2F */
+
+    /* ========= OHT 位置 / 速度 ========= */
+    #ohtCar {
+      transition: transform 0.9s linear;
+      transform-origin: 0 0;
+    }
+    .oht-l1-far  { transform: translate(150px, 260px); }
+    .oht-l1-appr { transform: translate(260px, 260px); }
+    .oht-l1-door { transform: translate(360px, 260px); }
+    .oht-l1-in   { transform: translate(400px, 260px); }
+
+    .oht-l2-in   { transform: translate(400px, 140px); }
+    .oht-l2-out  { transform: translate(620px, 140px); }
+
+    .speed-fast { transition: transform 0.35s linear; }
+    .speed-slow { transition: transform 0.95s linear; }
+
+    /* ========= P 門檔：上下移動 ========= */
+    #portStop1F, #portStop2F {
+      transition: transform 0.25s linear;
+      transform-origin: center bottom;
+    }
+
+    .ps-up   { transform: translate(0px, 0px); }
+    .ps-down { transform: translate(0px, 14px); } /* 下移 14px 表示放下 */
+
+    /* ========= 鎖車夾具 ========= */
+    #carLock rect {
+      transition: transform 0.25s linear, fill 0.25s linear;
+      transform-origin: center center;
+    }
+
+    .lock-open rect {
+      fill: #ff8800;
+      transform: translateX(0);
+    }
+    .lock-closed rect {
+      fill: #ff0000;
+    }
+    .lock-closed rect:first-child {
+      transform: translateX(18);   /* 左爪往右夾 */
+    }
+    .lock-closed rect:last-child {
+      transform: translateX(-18);  /* 右爪往左夾 */
+    }
+
+    /* 感測位置 */
+    .sensor {
+      fill: #ffcc00;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+
+<h2>OHT 電梯跨樓層搬運流程</h2>
+
+<div class="btn-group">
+  <button id="btnStep">單步</button>
+  <button id="btnAuto">自動</button>
+  <button id="btnStop">停止</button>
+  <button id="btnReset">重置</button>
+</div>
+<div>
+  流程：1F 遠端 → Appr 減速 → Stop 定位 → 進電梯 → 鎖車 → 升到 2F → 開門＋解鎖＋2F 門檔放下 → OHT 直接到 Leave/Stop → 2F 門檔立起可關門。
+</div>
+
+<svg viewBox="0 0 900 420" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- 2F 軌道 -->
+  <line x1="100" y1="140" x2="800" y2="140"
+        stroke="#444" stroke-width="5" stroke-linecap="round" />
+  <text x="100" y="120" font-size="12">2F：OHT 軌道</text>
+
+  <!-- 1F 軌道 -->
+  <line x1="100" y1="260" x2="800" y2="260"
+        stroke="#666" stroke-width="5" stroke-linecap="round" />
+  <text x="100" y="280" font-size="12">1F：OHT 軌道</text>
+
+  <!-- 電梯井框架 -->
+  <rect x="380" y="100" width="120" height="200"
+        fill="none" stroke="#222" stroke-width="2" rx="4" ry="4"/>
+
+  <!-- 門鎖區 (2F/1F 門位置線) -->
+  <line x1="380" y1="140" x2="500" y2="140"
+        stroke="#999" stroke-width="2" stroke-dasharray="4 3" />
+  <text x="440" y="132" text-anchor="middle" font-size="10">2F 門 / 門鎖區</text>
+
+  <line x1="380" y1="260" x2="500" y2="260"
+        stroke="#999" stroke-width="2" stroke-dasharray="4 3" />
+  <text x="440" y="252" text-anchor="middle" font-size="10">1F 門 / 門鎖區</text>
+
+  <!-- 1F 感測 Appr / Stop / In -->
+  <rect x="250" y="252" width="20" height="16" class="sensor"/>
+  <text x="260" y="249" text-anchor="middle" font-size="9">Appr</text>
+
+  <rect x="350" y="252" width="20" height="16" class="sensor"/>
+  <text x="360" y="249" text-anchor="middle" font-size="9">Stop</text>
+
+  <rect x="392" y="252" width="20" height="16" class="sensor"/>
+  <text x="402" y="249" text-anchor="middle" font-size="9">In</text>
+
+  <!-- 2F Leave/Stop 感測 -->
+  <rect x="610" y="132" width="20" height="16" class="sensor"/>
+  <text x="620" y="129" text-anchor="middle" font-size="9">Leave/Stop</text>
+
+  <!-- 1F P 門檔（門口前） -->
+  <g id="portStop1F" class="ps-up">
+    <rect x="340" y="250" width="6" height="20"
+          fill="#ff0000" stroke="#880000" stroke-width="1"/>
+    <text x="343" y="248" text-anchor="middle" font-size="8">P</text>
+  </g>
+
+  <!-- 2F P 門檔：放在電梯門右外側 -->
+  <g id="portStop2F" class="ps-up">
+    <rect x="510" y="130" width="6" height="20"
+          fill="#ff0000" stroke="#880000" stroke-width="1"/>
+    <text x="513" y="128" text-anchor="middle" font-size="8">P</text>
+  </g>
+
+  <!-- 電梯轎廂 + 鎖車夾具 -->
+  <g id="elevatorCabin" class="cab-l1">
+    <rect x="-40" y="-20" width="80" height="40"
+          fill="none" stroke="#00aa55" stroke-width="2" rx="4" ry="4"/>
+    <text x="0" y="-26" text-anchor="middle" font-size="10">電梯轎廂</text>
+
+    <!-- 鎖車夾具 -->
+    <g id="carLock" class="lock-open">
+      <rect x="-40" y="0" width="18" height="10"
+            fill="#ff8800" stroke="#aa5500" stroke-width="1"/>
+      <rect x="22" y="0" width="18" height="10"
+            fill="#ff8800" stroke="#aa5500" stroke-width="1"/>
+    </g>
+  </g>
+
+  <!-- OHT 天車 -->
+  <g id="ohtCar" class="oht-l1-far speed-fast">
+    <rect x="-40" y="-20" width="80" height="40"
+          fill="none" stroke="#0077cc" stroke-width="2" rx="6" ry="6"/>
+    <text x="0" y="-5" text-anchor="middle" font-size="12">OHT</text>
+    <circle cx="-20" cy="22" r="4" fill="#0077cc"/>
+    <circle cx="20" cy="22" r="4" fill="#0077cc"/>
+  </g>
+
+  <!-- 流程提示文字 -->
+  <text id="tip0" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step0：1F 遠端待命，P 門檔全立起
+  </text>
+  <text id="tip1" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step1：放下 1F 門檔，OHT 高速接近
+  </text>
+  <text id="tip2" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step2：Appr → 切低速，往 Stop
+  </text>
+  <text id="tip3" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step3：Stop 定位，等進電梯
+  </text>
+  <text id="tip4" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step4：低速進電梯到 InCabin
+  </text>
+  <text id="tip5" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step5：OHT 完全進箱 → 1F 門檔立起，鎖車夾具夾緊
+  </text>
+  <text id="tip6" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step6：保持鎖車，上升到 2F
+  </text>
+  <text id="tip7" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step7：2F 開門＋解鎖同時，放下 2F 門檔，OHT 仍在電梯內
+  </text>
+  <text id="tip8" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step8：OHT 低速從電梯內直接駛到 Leave/Stop 位置
+  </text>
+  <text id="tip9" class="tip" x="450" y="330" text-anchor="middle" font-size="12">
+    Step9：OHT 已在 Leave/Stop，2F 門檔立起 → 允許關門
+  </text>
+
+</svg>
+
+<script>
+(function () {
+  const cabin   = document.getElementById('elevatorCabin');
+  const oht     = document.getElementById('ohtCar');
+  const ps1F    = document.getElementById('portStop1F');
+  const ps2F    = document.getElementById('portStop2F');
+  const carLock = document.getElementById('carLock');
+
+  const tips = [];
+  for (let i = 0; i <= 9; i++) {
+    tips[i] = document.getElementById('tip' + i);
+  }
+
+  function showTip(idx) {
+    tips.forEach((t, i) => {
+      if (!t) return;
+      t.classList.toggle('is-active', i === idx);
+    });
+  }
+
+  // 狀態表
+  const states = [
+    // 0 Idle：1F 遠端待命
+    { c:'cab-l1', o:'oht-l1-far',  sp:'fast', port1:'up',   port2:'up',   lock:'open',   tip:0 },
+
+    // 1 高速接近：1F 門檔放下
+    { c:'cab-l1', o:'oht-l1-appr', sp:'fast', port1:'down', port2:'up',   lock:'open',   tip:1 },
+
+    // 2 Appr → Stop
+    { c:'cab-l1', o:'oht-l1-door', sp:'slow', port1:'down', port2:'up',   lock:'open',   tip:2 },
+
+    // 3 Stop 定位
+    { c:'cab-l1', o:'oht-l1-door', sp:'slow', port1:'down', port2:'up',   lock:'open',   tip:3 },
+
+    // 4 進電梯 InCabin
+    { c:'cab-l1', o:'oht-l1-in',   sp:'slow', port1:'down', port2:'up',   lock:'open',   tip:4 },
+
+    // 5 完全進箱：1F 門檔立起＋鎖車夾緊
+    { c:'cab-l1', o:'oht-l1-in',   sp:'slow', port1:'up',   port2:'up',   lock:'closed', tip:5 },
+
+    // 6 上升到 2F，仍鎖車
+    { c:'cab-l2', o:'oht-l2-in',   sp:'slow', port1:'up',   port2:'up',   lock:'closed', tip:6 },
+
+    // 7 2F 開門＋解鎖同時，放下 2F 門檔
+    { c:'cab-l2', o:'oht-l2-in',   sp:'slow', port1:'up',   port2:'down', lock:'open',   tip:7 },
+
+    // 8 OHT 直接駛到 Leave/Stop，2F 門檔仍 down
+    { c:'cab-l2', o:'oht-l2-out',  sp:'slow', port1:'up',   port2:'down', lock:'open',   tip:8 },
+
+    // 9 OHT 在 Leave/Stop，2F 門檔立起，允許關門
+    { c:'cab-l2', o:'oht-l2-out',  sp:'slow', port1:'up',   port2:'up',   lock:'open',   tip:9 }
+  ];
+
+  let current = 0;
+  let auto = false;
+  let timerId = null;
+
+  // 小工具：把指定前綴 class 換掉
+  function replaceClass(el, prefix, newClass) {
+    [...el.classList]
+      .filter(c => c.startsWith(prefix))
+      .forEach(c => el.classList.remove(c));
+    el.classList.add(newClass);
+  }
+
+  function applyState(idx) {
+    const s = states[idx];
+
+    // 電梯樓層
+    replaceClass(cabin, 'cab-', s.c);
+
+    // OHT 位置 + 速度
+    replaceClass(oht, 'oht-', s.o);
+    replaceClass(oht, 'speed-', 'speed-' + s.sp);
+
+    // P 門檔 1F
+    ps1F.classList.toggle('ps-down', s.port1 === 'down');
+    ps1F.classList.toggle('ps-up',   s.port1 === 'up');
+
+    // P 門檔 2F
+    ps2F.classList.toggle('ps-down', s.port2 === 'down');
+    ps2F.classList.toggle('ps-up',   s.port2 === 'up');
+
+    // 鎖車夾具
+    carLock.classList.toggle('lock-closed', s.lock === 'closed');
+    carLock.classList.toggle('lock-open',   s.lock === 'open');
+
+    // 提示
+    showTip(s.tip);
+  }
+
+  function stepOnce() {
+    current = (current + 1) % states.length;
+    applyState(current);
+  }
+
+  function startAuto() {
+    if (auto) return;
+    auto = true;
+    function loop() {
+      if (!auto) return;
+      stepOnce();
+      timerId = setTimeout(loop, 900);
+    }
+    loop();
+  }
+
+  function stopAuto() {
+    auto = false;
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+  }
+
+  function reset() {
+    stopAuto();
+    current = 0;
+    applyState(current);
+  }
+
+  document.getElementById('btnStep').addEventListener('click', stepOnce);
+  document.getElementById('btnAuto').addEventListener('click', startAuto);
+  document.getElementById('btnStop').addEventListener('click', stopAuto);
+  document.getElementById('btnReset').addEventListener('click', reset);
+
+  // 初始狀態
+  reset();
+})();
+</script>
+
+</body>
+</html>
