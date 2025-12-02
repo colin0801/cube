@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>OHT 電梯跨樓層搬運（Final SN/R + 正確定位 + 正確開門時機）</title>
+  <style>
+    body { font-family: sans-serif; background: #f4f4f4; padding: 16px; }
+    svg { background: #ffffff; border: 1px solid #ccc; width: 900px; height: 420px; display: block; }
+    .btn-group button { margin-right: 4px; padding: 4px 8px; }
+    .tip { opacity: 0; transition: opacity 0.25s; }
+    .tip.is-active { opacity: 1; }
+
+    /* 電梯位置 */
+    #elevatorCabin { transition: transform 0.9s linear; transform-origin: 0 0; }
+    .cab-l1 { transform: translate(440px, 260px); }
+    .cab-l2 { transform: translate(440px, 140px); }
+
+    /* OHT 位置調整（含你畫的紅框定位） */
+    #ohtCar { transition: transform 0.9s linear; transform-origin: 0 0; }
+    .oht-l1-far  { transform: translate(220px, 260px); }
+    .oht-l1-appr { transform: translate(320px, 260px); }
+    .oht-l1-door { transform: translate(360px, 260px); }
+    .oht-l1-in   { transform: translate(440px, 260px); }  /* ← 車體定位在電梯廂內（紅色位置） */
+
+    .oht-l2-in   { transform: translate(440px, 140px); }  /* 2F 同步一致 */
+    .oht-l2-out  { transform: translate(560px, 140px); }
+
+    .speed-fast { transition: transform 0.35s linear; }
+    .speed-slow { transition: transform 0.95s linear; }
+
+    /* P 門檔 */
+    #portStop1F, #portStop2F { transition: transform 0.25s linear; }
+    .ps-up { transform: translate(0px,0px); }
+    .ps-down { transform: translate(0px,25px); }
+	
+	/* SNR 圓點顯示：OFF 粉紅、ON 綠色 */
+.snr-dot-off {
+  fill: #ff99ff;        /* 粉紅色：未動作 */
+}
+
+.snr-dot-on {
+  fill: #00cc44;        /* 綠色：動作中 */
+}
+
+/* VL 粉紅長條：上下伸縮 */
+#vlLock rect {
+  transition: transform 0.25s linear, fill 0.25s linear;
+  transform-origin: 0% 0%; 
+}
+
+/* vopen = 粉條縮回（往上縮） */
+.vlock-open rect {
+  fill:#ff8800;
+  transform: translate(0px,0px);
+}
+
+/* vclosed = 粉條伸出（回到原位） */
+.vlock-closed rect {
+  fill:#ff0000;
+  transform: translate(0px,-10px);
+}
+
+/* 左爪往右夾向中心 */
+.vlock-closed rect:first-child {
+
+fill:#ff0000;
+  transform:translate(0px,-10px);
+}
+
+/* 右爪往左夾向中心 */
+.vlock-closed rect:last-child  {
+fill:#ff0000;
+  transform: translate(0px,10ppx);
+}
+
+/* 鎖車夾具 */
+#carLock rect {
+  transition: transform 0.25s linear, fill 0.25s linear;
+}
+
+/* 縮回狀態（靠兩側） */
+.lock-open rect {
+  fill:#005599;
+  transform: transform: translate(0px,0px);
+}
+
+/* 伸出狀態（往中間夾住台車）
+.lock-closed rect {
+  fill:#66BBFF;
+} */
+
+/* 左爪往右夾向中心 */
+.lock-closed rect:first-child {
+
+fill:#66BBFF;
+  transform:translate(-18px,0px);
+}
+
+/* 右爪往左夾向中心 */
+.lock-closed rect:last-child  {
+fill:#66BBFF;
+  transform: translate(18px,0px);
+}
+
+    /* 原始感測（流程） */
+    .sensor { fill:#ffcc00; opacity:0.5; }
+
+    /* SN/R 感測 */
+    .sensor-sn {
+      fill:#00ddaa; opacity:0.7;
+      stroke:#008866; stroke-width:1;
+    }
+  </style>
+</head>
+<body>
+
+<h2>OHT 電梯跨樓層搬運（1F -> 2F）</h2>
+
+<div class="btn-group">
+  <button id="btnStep">單步</button>
+  <button id="btnAuto">自動</button>
+  <button id="btnStop">停止</button>
+  <button id="btnReset">重置</button>
+</div>
+
+<svg viewBox="0 0 900 420">
+
+  <!-- 2F 軌道 -->
+  <line x1="100" y1="140" x2="800" y2="140" stroke="#444" stroke-width="5" />
+  <text x="100" y="125" font-size="12">2F：OHT 軌道</text>
+
+  <!-- 1F 軌道 -->
+  <line x1="100" y1="260" x2="800" y2="260" stroke="#666" stroke-width="5" />
+  <text x="100" y="280" font-size="12">1F：OHT 軌道</text>
+
+  <!-- 電梯井 -->
+  <rect x="365" y="100" width="150" height="200" fill="none" stroke="#222" stroke-width="2"/>
+
+  <!-- 感測 Appr 
+  <rect x="305" y="252" width="20" height="16" class="sensor"/>
+  <text x="305" y="249" font-size="9">Appr</text>
+
+-->
+ <!-- 感測 Stop / In
+  <rect x="392" y="252" width="20" height="16" class="sensor"/>
+  <text x="402" y="249" font-size="9">In</text>
+ -->
+  <!-- 2F Leave 
+  <rect x="520" y="132" width="20" height="16" class="sensor"/>
+  <text x="520" y="129" font-size="9">Leave</text>
+-->
+  <!-- 1F P 門檔 -->
+  <g id="portStop1F" class="ps-up">
+    <rect x="370" y="250" width="6" height="20" fill="red"/>
+	<text x="370" y="260"  font-size="10" >1</text>
+  </g>
+
+  <!-- 2F P 門檔 -->
+  <g id="portStop2F" class="ps-up">
+    <rect x="500" y="130" width="6" height="20" fill="red"/>
+	<text x="500" y="140"  font-size="10" >5</text>
+  </g>
+
+
+  <!-- 電梯轎廂 -->
+  <g id="elevatorCabin" class="cab-l1">
+    <rect x="-40" y="-20" width="80" height="40" stroke="#00aa55" fill="none"/>
+    <g id="carLock" class="lock-open">
+      <rect x="-40" y="0" width="18" height="10" fill="#66BBFF"/>
+      <rect x="22"  y="0" width="18" height="10" fill="#66BBFF"/>
+
+	  
+    </g>
+		<text x="-54" y="10"  font-size="10" >3</text>
+	  <text x="44" y="10"  font-size="10" >7</text>
+    <!-- SNR 實體位置圓點＋數字 -->
+    <!-- 4 入-突出檢（左下） -->
+    <circle id="snr4Dot"  cx="-35" cy="12"  r="2.5" class="snr-dot-off" />
+    <text   x="-46" y="20" font-size="8">4</text>
+
+    <!-- 8 出-突出檢（右下） -->
+    <circle id="snr8Dot"  cx="35"  cy="12"  r="2.5" class="snr-dot-off" />
+    <text   x="42"  y="20" font-size="8">8</text>
+
+    <!-- 10 入-升降定位檢（左上） -->
+    <circle id="snr10Dot" cx="-35" cy="-12" r="2.5" class="snr-dot-off" />
+    <text   x="-50" y="-16" font-size="8">10</text>
+
+    <!-- 9 在席檢（中下） -->
+    <circle id="snr9Dot"  cx="0"   cy="12"  r="2.5" class="snr-dot-off" />
+    <text   x="-4"  y="20" font-size="8">9</text>
+
+    <!-- 11 出-升降定位檢（右上） -->
+    <circle id="snr11Dot" cx="35"  cy="-12" r="2.5" class="snr-dot-off" />
+    <text   x="42"  y="-16" font-size="8">11</text>
+	
+	  <!-- VL 車體鎖定：粉紅色，會跟著 VL 綠框一起移動 -->
+ 
+      <g id="vLock" class="vlock-open">
+      <rect x="-30" y="18" width="10" height="18" fill="#ff8800"/>
+      <rect x="24"  y="18" width="10" height="18" fill="#ff8800"/>
+	    <text x="-28" y="30"  font-size="10" >2</text>
+		<text x="26" y="30"  font-size="10" >6</text>
+    </g>
+
+  
+  </g>
+
+
+  <!-- OHT -->
+  <g id="ohtCar" class="oht-l1-far speed-fast">
+    <rect x="-40" y="-20" width="80" height="40" stroke="#0077cc" fill="none"/>
+	<text x="0" y="-5" text-anchor="middle" font-size="12">OHT</text>
+    <circle cx="-20" cy="-22" r="4" fill="#0077cc"/>
+    <circle cx="20" cy="-22" r="4" fill="#0077cc"/>
+	
+  </g>
+
+  <!-- Flow Tips -->
+  <text id="tip0" class="tip" x="370" y="330" font-size="12">Step0：1F 遠端待命</text>
+  <text id="tip1" class="tip" x="370" y="330" font-size="12">Step1：OHT到梯門前,發送交握進入請求</text>
+  <text id="tip2" class="tip" x="370" y="330" font-size="12">Step2：開 1F 門 </text>
+<text id="tip3" class="tip" x="370" y="330" font-size="12">
+  Step3：1F 門已開 → OHT 直接進入電梯
+</text>
+
+<text id="tip4" class="tip" x="370" y="330" font-size="12">
+  Step4：完全進箱 → 門檔立起＋鎖車
+</text>
+  <text id="tip5" class="tip" x="370" y="330" font-size="12">Step5：升降可</text>
+  <text id="tip6" class="tip" x="370" y="330" font-size="12">Step6：升到 2F</text>
+  <text id="tip7" class="tip" x="370" y="330" font-size="12">Step7：開 2F 門＋解鎖</text>
+  <text id="tip8" class="tip" x="370" y="330" font-size="12">Step8：駛出電梯,發送完成訊號</text>
+  <text id="tip9" class="tip" x="370" y="330" font-size="12">Step9：2F 關門</text>
+ <text id="tip10" class="tip" x="370" y="330" font-size="12">
+  Step10：2F 下降前 → 夾具縮回
+</text>
+<text id="tip11" class="tip" x="370" y="330" font-size="12">
+  Step11：VL 從 2F 降回 1F
+</text>
+<text id="tip12" class="tip" x="370" y="330" font-size="12">
+  Step12：回到 1F 遠端待命
+</text>
+  <!-- SNR 狀態顯示區 -->
+  <text x="610" y="30" font-size="12" font-weight="bold">SNR 狀態</text>
+  <text id="snr4Text"  x="610" y="45" font-size="11">(4) 入-突出檢：OFF</text>
+  <text id="snr8Text"  x="610" y="60" font-size="11">(8) 出-突出檢：OFF</text>
+  <text id="snr9Text"  x="610" y="75" font-size="11">(9) 在席檢：OFF</text>
+  <text id="snr10Text" x="610" y="90" font-size="11">(10) 入-升降定位檢：OFF</text>
+  <text id="snr11Text" x="610" y="105" font-size="11">(11) 出-升降定位檢：OFF</text>
+  <!-- 固定顯示：1,2,3,5,6,7 名稱列表 -->
+<text x="610" y="300" font-size="11">(1) 入-軌道車體閘門</text>
+<text x="610" y="315" font-size="11">(2) 入-升降車體鎖定</text>
+<text x="610" y="330" font-size="11">(3) 入-升降軌道鎖定</text>
+<text x="610" y="345" font-size="11">(5) 出-軌道車體閘門</text>
+<text x="610" y="360" font-size="11">(6) 出-升降車體鎖定</text>
+<text x="610" y="375" font-size="11">(7) 出-升降軌道鎖定</text>
+
+  
+</svg>
+
+<script>
+(function () {
+
+  const cabin   = document.getElementById('elevatorCabin');
+  const oht     = document.getElementById('ohtCar');
+  const ps1F    = document.getElementById('portStop1F');
+  const ps2F    = document.getElementById('portStop2F');
+  const carLock = document.getElementById('carLock');
+  const vLock = document.getElementById('vLock');
+  
+  const snr4Text  = document.getElementById('snr4Text');
+  const snr8Text  = document.getElementById('snr8Text');
+  const snr9Text  = document.getElementById('snr9Text');
+  const snr10Text = document.getElementById('snr10Text');
+  const snr11Text = document.getElementById('snr11Text');
+
+  const snr4Dot  = document.getElementById('snr4Dot');
+  const snr8Dot  = document.getElementById('snr8Dot');
+  const snr9Dot  = document.getElementById('snr9Dot');
+  const snr10Dot = document.getElementById('snr10Dot');
+  const snr11Dot = document.getElementById('snr11Dot');
+
+  const tips = [];
+  for (let i = 0; i <= 12; i++) tips[i] = document.getElementById('tip'+i);
+
+  function showTip(i){
+    tips.forEach((t,idx)=>t.classList.toggle('is-active',idx===i));
+  }
+
+  /* 最終正確邏輯狀態表 */
+    const states = [
+    // 0 Idle（電梯在 1F，夾具伸出） → 全部 SNR OFF，VL 鎖定 OFF
+    { c:'cab-l1', o:'oht-l1-far',  sp:'fast',
+      port1:'up',   port2:'up',   lock:'closed', tip:0,
+      vlock:'vopen',
+      snr4:false, snr8:false, snr9:false, snr10:true, snr11:true },
+
+    // 1 OHT 到梯門前
+    { c:'cab-l1', o:'oht-l1-appr', sp:'fast',
+      port1:'up',   port2:'up',   lock:'closed', tip:1,
+      vlock:'vopen',
+      snr4:false, snr8:false, snr9:false, snr10:true, snr11:true },
+
+    // 2 開 1F 門，入側突出檢開始作用
+    { c:'cab-l1', o:'oht-l1-appr', sp:'slow',
+      port1:'down', port2:'up',   lock:'closed', tip:2,
+      vlock:'vopen',
+      snr4:true,  snr8:false, snr9:false, snr10:true, snr11:true },
+
+    // 3 OHT 進入電梯中
+    { c:'cab-l1', o:'oht-l1-in',   sp:'slow',
+      port1:'down', port2:'up',   lock:'closed', tip:3,
+      vlock:'vopen',
+      snr4:true,  snr8:false, snr9:true, snr10:true, snr11:true },
+
+    // 4 完全進箱 → 這裡開始 VL 鎖定 ON
+    { c:'cab-l1', o:'oht-l1-in',   sp:'slow',
+      port1:'up',   port2:'up',   lock:'closed', tip:4,
+      vlock:'vclosed',
+      snr4:false, snr8:false, snr9:true, snr10:true, snr11:true },
+
+    // 5 升降可（仍在 1F）
+    { c:'cab-l1', o:'oht-l1-in',   sp:'slow',
+      port1:'up',   port2:'up',   lock:'open',   tip:5,
+      vlock:'vclosed',
+      snr4:false, snr8:false, snr9:true, snr10:true, snr11:true },
+
+    // 6 升到 2F（仍視為在席）
+    { c:'cab-l2', o:'oht-l2-in',   sp:'slow',
+      port1:'up',   port2:'up',   lock:'open',   tip:6,
+      vlock:'vclosed',
+      snr4:false, snr8:false, snr9:true, snr10:false, snr11:false },
+
+    // 7 2F 開門＋解鎖
+    { c:'cab-l2', o:'oht-l2-in',   sp:'slow',
+      port1:'up',   port2:'up', lock:'closed', tip:7,
+      vlock:'vclosed',
+      snr4:false, snr8:false, snr9:true, snr10:true, snr11:true },
+
+    // 8 OHT 駛出電梯 → 離席後 VL 鎖定關閉
+    { c:'cab-l2', o:'oht-l2-in',  sp:'slow',
+      port1:'up',   port2:'down', lock:'closed', tip:8,
+      vlock:'vopen',
+      snr4:false, snr8:true,  snr9:false, snr10:true, snr11:true },
+
+    // 9 2F 關門後（OHT 已離開，所有 SNR OFF）
+    { c:'cab-l2', o:'oht-l2-out',  sp:'slow',
+      port1:'up',   port2:'down',   lock:'closed', tip:9,
+      vlock:'vopen',
+      snr4:false, snr8:false, snr9:false, snr10:false, snr11:false },
+
+    // 10 下降前先縮回夾具（電梯還在 2F）
+    { c:'cab-l2', o:'oht-l2-out',  sp:'slow',
+      port1:'up', port2:'up', lock:'open', tip:10,
+      vlock:'vopen',
+      snr4:false, snr8:false, snr9:false, snr10:false, snr11:false },
+
+    // 11 從 2F 降回 1F（VL 空載下降）
+    { c:'cab-l1', o:'oht-l2-out',  sp:'slow',
+      port1:'up', port2:'up', lock:'open', tip:11,
+      vlock:'vopen',
+      snr4:false, snr8:false, snr9:false, snr10:false, snr11:false },
+
+    // 12 回到 1F 遠端待命
+    { c:'cab-l1', o:'oht-l1-far',  sp:'fast',
+      port1:'up', port2:'up', lock:'closed', tip:12,
+      vlock:'vopen',
+      snr4:false, snr8:false, snr9:false, snr10:false, snr11:false }
+  ];
+
+
+
+
+
+
+
+  let current=0, auto=false, timer=null;
+
+  function replaceClass(el,prefix,newClass){
+    [...el.classList].filter(c=>c.startsWith(prefix)).forEach(c=>el.classList.remove(c));
+    el.classList.add(newClass);
+  }
+
+  function applyState(i){
+    const s=states[i];
+    replaceClass(cabin,'cab-',s.c);
+    replaceClass(oht,'oht-',s.o);
+    replaceClass(oht,'speed-','speed-'+s.sp);
+    ps1F.classList.toggle('ps-down',s.port1==='down');
+    ps1F.classList.toggle('ps-up',  s.port1==='up');
+    ps2F.classList.toggle('ps-down',s.port2==='down');
+    ps2F.classList.toggle('ps-up',  s.port2==='up');
+    carLock.classList.toggle('lock-closed',s.lock==='closed');
+    carLock.classList.toggle('lock-open',  s.lock==='open');
+    vLock.classList.toggle('vlock-closed', s.vlock === 'vclosed');
+	vLock.classList.toggle('vlock-open',  s.vlock === 'vopen');
+
+	    // SNR 狀態文字更新
+    if (snr4Text) {
+      snr4Text.textContent  = '(4) 入-突出檢：' + (s.snr4  ? 'ON' : 'OFF');
+      snr8Text.textContent  = '(8) 出-突出檢：' + (s.snr8  ? 'ON' : 'OFF');
+      snr9Text.textContent  = '(9) 在席檢：'   + (s.snr9  ? 'ON' : 'OFF');
+      snr10Text.textContent = '(10) 入-升降定位檢：' + (s.snr10 ? 'ON' : 'OFF');
+      snr11Text.textContent = '(11) 出-升降定位檢：' + (s.snr11 ? 'ON' : 'OFF');
+    }
+	    // SNR 圓點顏色更新（9 / 10 / 11）
+    if (snr4Dot && snr8Dot && snr9Dot && snr10Dot && snr11Dot) {
+      // 先全部設成 OFF
+      [snr9Dot, snr10Dot, snr11Dot].forEach(dot => {
+        dot.classList.remove('snr-dot-on');
+        dot.classList.add('snr-dot-off');
+      });
+      [snr4Dot,snr8Dot].forEach(dot => {
+        dot.classList.remove('snr-dot-on');
+        dot.classList.add('snr-dot-off');
+      });
+      // 根據狀態開啟 ON 顏色
+      if (s.snr4) {
+        snr4Dot.classList.remove('snr-dot-off');
+        snr4Dot.classList.add('snr-dot-on');
+      }
+      if (s.snr8) {
+        snr8Dot.classList.remove('snr-dot-off');
+        snr8Dot.classList.add('snr-dot-on');
+      }
+      if (s.snr9) {
+        snr9Dot.classList.remove('snr-dot-off');
+        snr9Dot.classList.add('snr-dot-on');
+      }
+      if (s.snr10) {
+        snr10Dot.classList.remove('snr-dot-off');
+        snr10Dot.classList.add('snr-dot-on');
+      }
+      if (s.snr11) {
+        snr11Dot.classList.remove('snr-dot-off');
+        snr11Dot.classList.add('snr-dot-on');
+      }
+    }
+
+
+    showTip(s.tip);
+  }
+
+  function step(){ current=(current+1)%states.length; applyState(current); }
+
+  function start(){
+    if(auto) return;
+    auto=true;
+    const loop=()=>{ if(!auto)return; step(); timer=setTimeout(loop,900); };
+    loop();
+  }
+
+  function stop(){ auto=false; if(timer) clearTimeout(timer); }
+
+  function reset(){ stop(); current=0; applyState(0); }
+
+  document.getElementById('btnStep').onclick=step;
+  document.getElementById('btnAuto').onclick=start;
+  document.getElementById('btnStop').onclick=stop;
+  document.getElementById('btnReset').onclick=reset;
+
+  reset();
+})();
+</script>
+
+</body>
+</html>
