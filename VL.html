@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>OHT 車輛升降機進出流程 - 動態 SVG 流程圖</title>
+  <style>
+    /* ---- 全局樣式 ---- */
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans TC", sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .flow-container {
+      width: 95vw;
+      max-width: 1200px;
+      background: radial-gradient(circle at top left, #1e293b, #020617);
+      border-radius: 24px;
+      padding: 24px 24px 16px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .flow-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .flow-title {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flow-title-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #7dd3fc;
+    }
+
+    .flow-subtitle {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+    }
+
+    .legend-color.active {
+      background: #22c55e;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
+    }
+
+    .legend-color.idle {
+      background: #1e293b;
+      border: 1px solid #4b5563;
+    }
+
+    .legend-color.transition {
+      background: #38bdf8;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.8);
+    }
+
+    /* ---- SVG 尺寸設定 ---- */
+    svg {
+      width: 100%;
+      height: auto;
+      border-radius: 18px;
+      background: radial-gradient(circle at top, #020617, #020617 40%, #020617);
+    }
+
+    /* ---- 節點樣式 ---- */
+    .step-rect {
+      fill: #020617;
+      stroke: #4b5563;
+      stroke-width: 1.5;
+      rx: 10;
+      ry: 10;
+      filter: drop-shadow(0 0 6px rgba(15, 23, 42, 0.6));
+      transition: all 0.35s ease;
+    }
+
+    .step-label-main {
+      font-size: 12px;
+      font-weight: 600;
+      fill: #e5e7eb;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .step-label-sub {
+      font-size: 9px;
+      fill: #9ca3af;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .step-index {
+      font-size: 10px;
+      fill: #64748b;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    /* ---- 節點狀態：Active / Idle ---- */
+    .step-group.active .step-rect {
+      stroke: #22c55e;
+      stroke-width: 2;
+      fill: rgba(22, 163, 74, 0.12);
+      filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.8));
+    }
+
+    .step-group.active .step-label-main {
+      fill: #bbf7d0;
+    }
+
+    .step-group.active .step-index {
+      fill: #22c55e;
+    }
+
+    .step-group.idle .step-rect {
+      opacity: 0.6;
+    }
+
+    /* ---- 節點閃爍動畫（Active） ---- */
+    .step-group.active .step-rect {
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        stroke-width: 2;
+        transform: scale(1);
+      }
+      50% {
+        stroke-width: 2.5;
+        transform: scale(1.03);
+      }
+      100% {
+        stroke-width: 2;
+        transform: scale(1);
+      }
+    }
+
+    /* ---- 箭頭與流程線 ---- */
+    .flow-line {
+      stroke: #4b5563;
+      stroke-width: 1.4;
+      fill: none;
+      stroke-linecap: round;
+    }
+
+    /* 動態流動箭頭（模擬物流方向） */
+    .flow-line.flowing {
+      stroke-dasharray: 4 6;
+      animation: dash-move 1.1s linear infinite;
+    }
+
+    @keyframes dash-move {
+      to {
+        stroke-dashoffset: -10;
+      }
+    }
+
+    .arrow-head {
+      fill: #6b7280;
+      transition: fill 0.3s ease;
+    }
+
+    .arrow-group.active .arrow-head,
+    .arrow-group.active .flow-line {
+      stroke: #38bdf8;
+    }
+
+    .arrow-group.active .arrow-head {
+      fill: #38bdf8;
+    }
+
+    /* ---- 底部說明文字 ---- */
+    .timeline-caption {
+      font-size: 11px;
+      fill: #6b7280;
+    }
+
+    /* ---- STEP 訊息顯示區 ---- */
+    .status-bar {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #cbd5f5;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .status-text {
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .status-highlight {
+      color: #22c55e;
+      font-weight: 600;
+    }
+
+    .status-secondary {
+      color: #9ca3af;
+      font-size: 11px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+      margin-right: 6px;
+    }
+
+    .status-right {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: #9ca3af;
+      background: rgba(15, 23, 42, 0.7);
+    }
+  </style>
+</head>
+<body>
+<div class="flow-container">
+  <div class="flow-header">
+    <div class="flow-title">
+      OHT 車輛升降機進出流程
+      
+    </div>
+    <div class="flow-subtitle">
+      從 <strong>到達入口</strong> 到 <strong>復歸待命</strong> 的完整循環
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="legend-item">
+      <span class="legend-color active"></span> 目前步驟 (Active)
+    </span>
+    <span class="legend-item">
+      <span class="legend-color idle"></span> 其他步驟 (Idle)
+    </span>
+    <span class="legend-item">
+      <span class="legend-color transition"></span> 物理移動 / 轉場
+    </span>
+  </div>
+
+  <!-- 使用 viewBox 讓 SVG 自適應寬度 -->
+  <svg viewBox="0 0 1000 260" xmlns="http://www.w3.org/2000/svg">
+    <!-- 定義箭頭標記 -->
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" class="arrow-head" />
+      </marker>
+    </defs>
+
+    <!-- 背景網格 & 軌道感 -->
+    <g opacity="0.12">
+      <rect x="40" y="40" width="920" height="180" fill="none" stroke="#1f2937" stroke-width="1" rx="18" ry="18" />
+      <!-- 幾條垂直/水平線 -->
+      <line x1="200" y1="40" x2="200" y2="220" stroke="#1f2937" stroke-width="0.8" />
+      <line x1="400" y1="40" x2="400" y2="220" stroke="#1f2937" stroke-width="0.8" />
+      <line x1="600" y1="40" x2="600" y2="220" stroke="#1f2937" stroke-width="0.8" />
+      <line x1="800" y1="40" x2="800" y2="220" stroke="#1f2937" stroke-width="0.8" />
+
+      <line x1="40" y1="90" x2="960" y2="90" stroke="#1f2937" stroke-width="0.8" />
+      <line x1="40" y1="170" x2="960" y2="170" stroke="#1f2937" stroke-width="0.8" />
+    </g>
+
+    <!-- 上排流程線條與箭頭 (S1 -> S4) -->
+    <g class="arrow-group" data-arrow-index="0">
+      <path
+        class="flow-line"
+        d="M 150 100 L 280 100"
+        marker-end="url(#arrow)"
+      />
+    </g>
+    <g class="arrow-group" data-arrow-index="1">
+      <path
+        class="flow-line"
+        d="M 350 100 L 480 100"
+        marker-end="url(#arrow)"
+      />
+    </g>
+    <g class="arrow-group" data-arrow-index="2">
+      <path
+        class="flow-line"
+        d="M 550 100 L 680 100"
+        marker-end="url(#arrow)"
+      />
+    </g>
+
+    <!-- 右側折返箭頭 (S4 → S5) -->
+    <g class="arrow-group" data-arrow-index="3">
+      <path
+        class="flow-line"
+        d="M 750 120 C 830 120, 830 150, 750 150"
+        marker-end="url(#arrow)"
+      />
+    </g>
+
+    <!-- 下排流程線條與箭頭 (S5 -> S7) -->
+    <g class="arrow-group" data-arrow-index="4">
+      <path
+        class="flow-line"
+        d="M 680 190 L 550 190"
+        marker-end="url(#arrow)"
+      />
+    </g>
+    <g class="arrow-group" data-arrow-index="5">
+      <path
+        class="flow-line"
+        d="M 480 190 L 350 190"
+        marker-end="url(#arrow)"
+      />
+    </g>
+    <g class="arrow-group" data-arrow-index="6">
+      <path
+        class="flow-line"
+        d="M 280 190 L 150 190"
+        marker-end="url(#arrow)"
+      />
+    </g>
+
+    <!-- 連接上排與下排的縱向軌道 (S4↓S5) -->
+    <g opacity="0.7">
+      <line x1="750" y1="110" x2="750" y2="180" stroke="#374151" stroke-width="1.4" stroke-dasharray="3 4" />
+    </g>
+
+    <!-- ========= 節點群組 ========= -->
+    <!-- S1: OHT 到達升降機入口 -->
+    <g class="step-group" data-step-index="0" transform="translate(80, 70)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S1</text>
+      <text class="step-label-main" x="70" y="30">OHT 到達升降機入口</text>
+      <text class="step-label-sub" x="70" y="46">到站定位 &amp; 排隊</text>
+    </g>
+
+    <!-- S2: 任務與安全檢查 -->
+    <g class="step-group" data-step-index="1" transform="translate(280, 70)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S2</text>
+      <text class="step-label-main" x="70" y="30">任務與安全檢查</text>
+      <text class="step-label-sub" x="70" y="46">通訊 / 感測器 / 互鎖</text>
+    </g>
+
+    <!-- S3: 升降機平台定位 -->
+    <g class="step-group" data-step-index="2" transform="translate(480, 70)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S3</text>
+      <text class="step-label-main" x="70" y="30">升降機平台定位</text>
+      <text class="step-label-sub" x="70" y="46">對位當前樓層</text>
+    </g>
+
+    <!-- S4: 車輛進入升降機 -->
+    <g class="step-group" data-step-index="3" transform="translate(680, 70)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S4</text>
+      <text class="step-label-main" x="70" y="30">車輛進入升降機</text>
+      <text class="step-label-sub" x="70" y="46">進入 &amp; 定位鎖固</text>
+    </g>
+
+    <!-- S5: 升降機移動到目標樓層 -->
+    <g class="step-group" data-step-index="4" transform="translate(680, 160)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S5</text>
+      <text class="step-label-main" x="70" y="30">升降機移動到目標樓層</text>
+      <text class="step-label-sub" x="70" y="46">升/降至指定樓層</text>
+    </g>
+
+    <!-- S6: 車輛離開升降機 -->
+    <g class="step-group" data-step-index="5" transform="translate(480, 160)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S6</text>
+      <text class="step-label-main" x="70" y="30">車輛離開升降機</text>
+      <text class="step-label-sub" x="70" y="46">駛出 &amp; 前往站點</text>
+    </g>
+
+    <!-- S7: 升降機復歸待命 -->
+    <g class="step-group" data-step-index="6" transform="translate(280, 160)">
+      <rect class="step-rect" x="0" y="0" width="140" height="60" />
+      <text class="step-index" x="16" y="16">S7</text>
+      <text class="step-label-main" x="70" y="30">升降機復歸待命</text>
+      <text class="step-label-sub" x="70" y="46">回到待命樓層</text>
+    </g>
+
+    <!-- 底部說明文字 -->
+    <text class="timeline-caption" x="50" y="240">
+      ※ 流程為示意：實際系統可依 OHT 調度邏輯、樓層策略與安全規範擴充節點。
+    </text>
+  </svg>
+
+  <!-- 流程狀態顯示 -->
+  <div class="status-bar">
+    <div class="status-text">
+      <span class="status-dot"></span>
+      目前節點：
+      <span id="current-step-label" class="status-highlight">初始化中...</span>
+    </div>
+    <div class="status-right">
+      <span class="status-secondary">
+        迴圈時間：約 <span id="cycle-seconds">21</span> 秒
+      </span>
+      <span class="tag">自動輪播</span>
+      <span class="tag">可對接實際狀態</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== 簡單 JS 邏輯：輪播高亮節點與箭頭 =====
+  (function () {
+    // 取得所有節點群組與箭頭群組
+    const stepGroups = Array.from(document.querySelectorAll(".step-group"));
+    const arrowGroups = Array.from(document.querySelectorAll(".arrow-group"));
+
+    // 對應 step index -> 顯示文字
+    const stepDescriptions = [
+      "S1 - OHT 到達升降機入口：車輛到站排隊，等待進入。",
+      "S2 - 任務與安全檢查：通訊、門鎖、感測器及互鎖確認。",
+      "S3 - 升降機平台定位：平台移動併對位當前樓層。",
+      "S4 - 車輛進入升降機：OHT 進入平台並完成定位鎖固。",
+      "S5 - 升降機移動到目標樓層：平台升/降至目標樓層。",
+      "S6 - 車輛離開升降機：OHT 駛出升降機前往目標站點。",
+      "S7 - 升降機復歸待命：平台返回待命位置，等待下一任務。"
+    ];
+
+    const stepLabelEl = document.getElementById("current-step-label");
+
+    let currentIndex = 0;
+    const stepIntervalMs = 3000; // 每個節點停留時間 (毫秒)
+    const cycleSeconds = Math.round((stepIntervalMs * stepGroups.length) / 1000);
+    document.getElementById("cycle-seconds").textContent = cycleSeconds.toString();
+
+    // 初始化：先清空所有狀態
+    function resetAll() {
+      stepGroups.forEach((g) => {
+        g.classList.remove("active");
+        g.classList.add("idle");
+      });
+      arrowGroups.forEach((g) => {
+        g.classList.remove("active");
+        const line = g.querySelector(".flow-line");
+        if (line) line.classList.remove("flowing");
+      });
+    }
+
+    // 設定目前 active 節點
+    function setActiveStep(index) {
+      resetAll();
+
+      // Active 節點
+      const activeGroup = stepGroups[index];
+      if (activeGroup) {
+        activeGroup.classList.add("active");
+        activeGroup.classList.remove("idle");
+      }
+
+      // 對應箭頭：index 與下一個節點之間的 arrow
+      const arrow = arrowGroups[index];
+      if (arrow) {
+        arrow.classList.add("active");
+        const line = arrow.querySelector(".flow-line");
+        if (line) line.classList.add("flowing");
+      }
+
+      // 更新文字描述
+      if (stepDescriptions[index]) {
+        stepLabelEl.textContent = stepDescriptions[index];
+      }
+    }
+
+    // 啟動自動輪播
+    function startLoop() {
+      setActiveStep(currentIndex);
+
+      setInterval(() => {
+        currentIndex = (currentIndex + 1) % stepGroups.length;
+        setActiveStep(currentIndex);
+      }, stepIntervalMs);
+    }
+
+    // DOM 就緒後啟動
+    startLoop();
+  })();
+</script>
+</body>
+</html>
